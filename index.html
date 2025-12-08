@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>AROUND YOUR SCREEN</title>
+    <link rel="shortcut icon" href="TemplateData/favicon.ico" />
+    <link rel="stylesheet" href="TemplateData/style.css" />
+    <script src="Build/WebGLv6.loader.js"></script>
+  </head>
+  <body>
+    <!-- Custom Loading Video -->
+    <video
+      id="loadingVideo"
+      autoplay
+      muted
+      playsinline
+      preload="auto"
+      style="display: block"
+    >
+      <source src="TemplateData/nine-digitized-clip.mp4" type="video/mp4" />
+      <!-- Fallback text if video fails -->
+      <p>
+        Your browser does not support the video tag. Please upgrade to a modern
+        browser.
+      </p>
+    </video>
+
+    <!-- Progress Bar Container (hidden until video ends) -->
+    <div
+      id="progressContainer"
+      style="
+        display: none;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 400px;
+        text-align: center;
+      "
+    >
+      <div id="progressBar">
+        <div id="progressFill"></div>
+      </div>
+      <p id="progressText">Loading: 0%</p>
+    </div>
+
+    <!-- Unity Canvas (hidden until fully loaded) -->
+    <div
+      id="unityContainer"
+      style="display: none; width: 100%; height: 100%"
+    ></div>
+
+    <script>
+      // Video handling
+      var video = document.getElementById("loadingVideo");
+      var progressContainer = document.getElementById("progressContainer");
+      var unityContainer = document.getElementById("unityContainer");
+      var canvas;
+      var glContext; // Store the explicit WebGL context
+      var progressFillElement = document.getElementById("progressFill");
+      var progressTextElement = document.getElementById("progressText");
+
+      function updateProgressionElements(elementWidth, elementText) {
+        if (elementWidth == 0) {
+          progressContainer.style.display = "none";
+
+          return;
+        } else {
+          progressContainer.style.display = "block";
+        }
+
+        progressFillElement.style.width = elementWidth;
+        progressTextElement.textContent = elementText;
+      }
+
+      // Scene handling
+      var config = {
+        dataUrl: "Build/WebGLv6.data.br",
+        frameworkUrl: "Build/WebGLv6.framework.js.br",
+        codeUrl: "Build/WebGLv6.wasm.br",
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: "Around Your Screen",
+        productName: "Around Your Screen",
+        productVersion: "0.6.0",
+        // Progress callback: updates bar with accurate Unity loading progress (0-1)
+        onProgress: function (progress) {
+          var percent = Math.round(progress * 100);
+          updateProgressionElements(
+            progress * 100 + "%",
+            "Loading" + percent + "%"
+          );
+        },
+        // This is called ONCE when the runtime is fully initialized
+        onRuntimeInitialized: () => {
+          console.log("Unity runtime fully loaded");
+          updateProgressionElements(0);
+          // No need to touch canvas here – Unity already created and sized it
+        },
+      };
+
+      function createCleanCanvas() {
+        // Dynamically create a fresh canvas to avoid any pre-existing pollution
+        canvas = document.createElement("canvas");
+        canvas.id = "unity-canvas";
+        canvas.style.width = "100%";
+        canvas.style.height = "100%";
+        canvas.tabIndex = 100; // For focus handling
+        unityContainer.appendChild(canvas);
+        console.log("Created clean canvas:", canvas); // Debug
+
+        // Explicitly create and validate WebGL context
+        try {
+          // Try WebGL 2.0 first
+          glContext = canvas.getContext("webgl2", {
+            alpha: true,
+            depth: true,
+            stencil: true,
+            antialias: true,
+            premultipliedAlpha: true,
+            preserveDrawingBuffer: false,
+            powerPreference: "default", // Or 'high-performance'
+          });
+          if (!glContext) {
+            throw new Error("WebGL 2.0 not supported");
+          }
+          console.log("WebGL 2.0 context created successfully:", glContext); // Debug
+        } catch (e) {
+          console.warn("WebGL 2.0 failed, falling back to WebGL 1.0:", e);
+          try {
+            glContext = canvas.getContext("webgl", {
+              alpha: true,
+              depth: true,
+              stencil: true,
+              antialias: true,
+              premultipliedAlpha: true,
+              preserveDrawingBuffer: false,
+            });
+            if (!glContext) {
+              throw new Error("WebGL 1.0 not supported");
+            }
+            console.log("WebGL 1.0 context created successfully:", glContext); // Debug
+          } catch (e2) {
+            console.error("WebGL context creation failed completely:", e2);
+            alert(
+              "WebGL not supported in this browser. Please use Chrome or Firefox."
+            );
+            return false; // Prevent Unity init
+          }
+        }
+
+        // Validate context with a simple query (mimics Emscripten's checks)
+        try {
+          glContext.getParameter(glContext.VERSION); // Should throw if invalid
+          console.log("WebGL context validated OK"); // Debug
+        } catch (e) {
+          console.error("WebGL context validation failed:", e);
+          return false;
+        }
+
+        // Explicitly pass the canvas to config (Unity will use our pre-created context if possible)
+        config.canvas = canvas;
+        return true; // Success
+      }
+
+      function startUnity() {
+        video.style.display = "none";
+        progressContainer.style.display = "block";
+        unityContainer.style.display = "block"; // Show container now
+
+        // Short delay to let DOM/DOM settle
+        setTimeout(() => {
+          if (!createCleanCanvas()) {
+            console.error("Canvas creation failed - aborting Unity init");
+            return;
+          }
+
+          createUnityInstance(unityContainer, config, (progress) => {
+            // This is the post-load callback (progress here is the full instance)
+            console.log("Unity runtime initialized:", progress); // Debug
+            if (!progress || !progress.module) {
+              console.error(
+                "Progress module is undefined - Unity init may have failed"
+              );
+              return; // Bail out safely
+            }
+            try {
+              canvas = progress.module.canvas;
+              if (canvas && window.GLctx) {
+                // Check Emscripten's GLctx
+                console.log(
+                  "Canvas and GLctx accessed successfully:",
+                  canvas,
+                  window.GLctx
+                ); // Debug
+              } else {
+                throw new Error("GLctx still undefined after init");
+              }
+            } catch (e) {
+              console.error("Post-init canvas/GLctx error:", e);
+              // Fallback: Recreate context if lost
+              if (glContext) {
+                glContext =
+                  canvas.getContext("webgl2") || canvas.getContext("webgl");
+                window.GLctx = glContext; // Manual override (hacky but works in some cases)
+                console.log("Fallback context recreated");
+              }
+
+              updateProgressionElements(0, "");
+            }
+          }).catch((message) => {
+            console.error("Unity load failed:", message);
+            // Enhanced error for GLctx/WebGL issues
+            if (message.includes("GLctx") || message.includes("getContext")) {
+              updateProgressionElements(
+                "100%",
+                "WebGL context failed (GLctx undefined). Check console for details. Try: Refresh, disable extensions, or use Chrome. Error: " +
+                  message
+              );
+            } else {
+              updateProgressionElements(
+                "100%",
+                "Failed to load Unity: " + message
+              );
+            }
+          });
+        }, 100); // 100ms delay
+      }
+
+      video.onended = function () {
+        startUnity();
+      };
+
+      // Fallback: Start Unity after 10 seconds if video fails
+      setTimeout(() => {
+        if (video.style.display !== "none") {
+          startUnity();
+        }
+      }, 10000);
+
+      // Optional: Cleanup on page unload to prevent memory leaks
+      window.addEventListener("beforeunload", () => {
+        if (canvas && window.GLctx) {
+          try {
+            canvas.getContext("webgl2")?.loseContext(); // Release context
+            delete window.GLctx;
+          } catch (e) {
+            console.warn("Context cleanup failed:", e);
+          }
+        }
+      });
+
+      // Monitor for context loss (Unity 6 WebGL+)
+      window.addEventListener(
+        "webglcontextlost",
+        (e) => {
+          console.error("WebGL context lost:", e);
+          e.preventDefault();
+        },
+        false
+      );
+    </script>
+  </body>
+</html>
