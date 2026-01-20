@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en-us">
   <head>
     <meta charset="utf-8" />
@@ -87,14 +87,6 @@
         companyName: "Around Your Screen",
         productName: "Around Your Screen",
         productVersion: "0.6.0",
-        // Progress callback: updates bar with accurate Unity loading progress (0-1)
-        onProgress: function (progress) {
-          var percent = Math.round(progress * 100);
-          updateProgressionElements(
-            progress * 100 + "%",
-            "Loading" + percent + "%"
-          );
-        },
         // This is called ONCE when the runtime is fully initialized
         onRuntimeInitialized: () => {
           console.log("Unity runtime fully loaded");
@@ -147,7 +139,7 @@
           } catch (e2) {
             console.error("WebGL context creation failed completely:", e2);
             alert(
-              "WebGL not supported in this browser. Please use Chrome or Firefox."
+              "WebGL not supported in this browser. Please use Chrome or Firefox.",
             );
             return false; // Prevent Unity init
           }
@@ -180,37 +172,17 @@
           }
 
           createUnityInstance(unityContainer, config, (progress) => {
-            // This is the post-load callback (progress here is the full instance)
-            console.log("Unity runtime initialized:", progress); // Debug
-            if (!progress || !progress.module) {
-              console.error(
-                "Progress module is undefined - Unity init may have failed"
-              );
-              return; // Bail out safely
-            }
-            try {
-              canvas = progress.module.canvas;
-              if (canvas && window.GLctx) {
-                // Check Emscripten's GLctx
-                console.log(
-                  "Canvas and GLctx accessed successfully:",
-                  canvas,
-                  window.GLctx
-                ); // Debug
-              } else {
-                throw new Error("GLctx still undefined after init");
-              }
-            } catch (e) {
-              console.error("Post-init canvas/GLctx error:", e);
-              // Fallback: Recreate context if lost
-              if (glContext) {
-                glContext =
-                  canvas.getContext("webgl2") || canvas.getContext("webgl");
-                window.GLctx = glContext; // Manual override (hacky but works in some cases)
-                console.log("Fallback context recreated");
-              }
+            if (progress < 0 || progress > 1) return;
 
-              updateProgressionElements(0, "");
+            var percent = Math.round(progress * 100);
+            updateProgressionElements(
+              progress * 100 + "%",
+              "Loading " + percent + "%",
+            );
+
+            // Optional: hide bar when done
+            if (progress >= 1) {
+              progressContainer.style.display = "none";
             }
           }).catch((message) => {
             console.error("Unity load failed:", message);
@@ -219,12 +191,12 @@
               updateProgressionElements(
                 "100%",
                 "WebGL context failed (GLctx undefined). Check console for details. Try: Refresh, disable extensions, or use Chrome. Error: " +
-                  message
+                  message,
               );
             } else {
               updateProgressionElements(
                 "100%",
-                "Failed to load Unity: " + message
+                "Failed to load Unity: " + message,
               );
             }
           });
@@ -261,7 +233,7 @@
           console.error("WebGL context lost:", e);
           e.preventDefault();
         },
-        false
+        false,
       );
     </script>
   </body>
